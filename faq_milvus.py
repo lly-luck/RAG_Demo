@@ -1,4 +1,4 @@
-"""EduRAG 双层集成问答系统"""
+"""FAQ + RAG 双层集成问答系统"""
 from base.logger import logger
 from mysql_qa.db.mysql_client import MySQLClient
 from mysql_qa.search.bm25_search import BM25Search
@@ -17,7 +17,7 @@ class IntegratedQASystem:
         """
         FAQ+RAG
         :param query: 用户提问
-        :param scores_filter: 学科过滤
+        :param scores_filter: 技术方向过滤
         :param session_id: 会话id
         :return:
         """
@@ -63,7 +63,7 @@ if __name__ == "__main__":
             query = input("请输入问题：")
             if query == "exit":
                 break
-            subj = input("请输入学科（可选）：") or None
+            subj = input("请输入技术方向（可选）：") or None
             gen = qa.search(query, subj, "123")
             async for chunk, is_end in gen:
                 print(chunk, end="", flush=True)

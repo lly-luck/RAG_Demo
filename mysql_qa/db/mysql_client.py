@@ -42,7 +42,8 @@ class MySQLClient:
             logger.error(f"连接关闭失败: {e}")
 
     # 查询所有问题
-    def fetch_qusetion(self):
+    def fetch_questions(self):
+        """查询FAQ知识库中的全部问题"""
         try:
             # 定义sql
             sql = "select question from jpkb"
@@ -58,6 +59,9 @@ class MySQLClient:
             logger.error(f"问题列表查询失败：{e}")
             # 异常，返回空列表
             return []
+
+    # 兼容旧方法名，避免已有调用点报错
+    fetch_qusetion = fetch_questions
 
     # 根据问题查询答案
     def fetch_answer(self, question):
@@ -194,8 +198,8 @@ class MySQLClient:
 
 if __name__ == '__main__':
     mysql_client = MySQLClient()
-    qusetions = mysql_client.fetch_qusetion()
-    for question in qusetions:
+    questions = mysql_client.fetch_questions()
+    for question in questions:
         answer = mysql_client.fetch_answer(question)
         print(f"问题：{question} \n 答案：{answer}")
         print("-------------")

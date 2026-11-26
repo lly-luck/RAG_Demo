@@ -31,9 +31,9 @@ class Config:
         # ===================== Milvus 向量库配置 =====================
         self.MILVUS_URI = os.getenv("MILVUS_PORT", self.config.get("milvus", "uri", fallback="http://localhost:19530"))
         self.MILVUS_DATABASE_NAME = os.getenv("MILVUS_DATABASE_NAME",
-                                              self.config.get("milvus", "database_name", fallback="itcast"))
+                                              self.config.get("milvus", "database_name", fallback="rag_qa"))
         self.MILVUS_COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME",
-                                                self.config.get("milvus", "collection_name", fallback="edurag_0421"))
+                                                self.config.get("milvus", "collection_name", fallback="rag_kb"))
 
         # ===================== LLM 大模型配置 =====================
         self.LLM_MODEL = self.config.get("llm", "model", fallback="deepseek-flash")
@@ -52,6 +52,10 @@ class Config:
         self.VALID_SOURCES = eval(
             self.config.get("app", "valid_sources", fallback='["ai","java","test","ops","bigdata"]'))
         self.CUSTOMER_SERVICE_PHONE = self.config.get("app", "customer_service_phone", fallback="13800138001")
+
+        # ===================== 目录配置 =====================
+        self.DATA_DIR = os.path.join(BASE_DIR, "rag_qa", "data")  # 原始文档根目录
+        self.MODELS_DIR = os.path.join(BASE_DIR, "model")  # 本地模型根目录
 
 
 # 单例模式：全局只加载一次配置

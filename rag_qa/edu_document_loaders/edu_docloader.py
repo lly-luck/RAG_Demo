@@ -112,8 +112,3 @@ class OCRDOCLoader(BaseLoader):
         return resp
 
 
-
-if __name__ == '__main__':
-    docx_loader = OCRDOCLoader(filepath='/0001.项目目录/others/test/人工智能就业课课程大纲.docx')
-    doc = docx_loader.load()
-    print(doc)

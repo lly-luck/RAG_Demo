@@ -12,7 +12,7 @@ def setup_logging(log_file=config.LOG_FILE):
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     # 获取全局日志实例
-    logger = logging.getLogger("EduRAG")
+    logger = logging.getLogger("RAG-QA")
     logger.setLevel(logging.DEBUG)
 
     # 避免重复添加处理器

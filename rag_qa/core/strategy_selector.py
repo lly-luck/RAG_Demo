@@ -19,7 +19,12 @@ class StrategySelector:
 
     def __init__(self):
         # 1. 初始化大模型
-        self.llm = init_chat_model(model=conf.LLM_MODEL,temperature=0.3)
+        self.llm = init_chat_model(
+            model=conf.LLM_MODEL,
+            temperature=0.3,
+            api_key=conf.LLM_API_KEY,
+            base_url=conf.LLM_BASE_URL
+        )
 
         # 2. 初始化向量存储
         self.vector_store = VectorStore()
@@ -29,7 +34,7 @@ class StrategySelector:
         """
         核心入口：根据用户问题自动选择最优检索策略
         :param query: 用户原始问题
-        :param source_filter: 学科过滤
+        :param source_filter: 技术方向过滤
         :return: 最优排序后的文档列表
         """
         # 调用llm选择策略
@@ -126,9 +131,9 @@ class StrategySelector:
 
 if __name__ == '__main__':
     ss = StrategySelector()
-    query1 = "AI智能应用学科的课程目录是怎样的"
-    query2 = "人工智能学科和AI智能应用学科区别是什么"
-    query3 = "人工智能学科在教育领域的应用有哪些？"
+    query1 = "Spring Boot 自动配置的原理是什么"
+    query2 = "Redis 和 MySQL 的区别是什么"
+    query3 = "大模型在智能客服中有哪些应用"
     docs = ss.strategy_select(query1)
     print(docs)
 

@@ -59,7 +59,7 @@ if __name__ == '__main__':
     classifier = QueryClassifier()
     test_queries = [
         "springboot的原理是什么",
-        "AI学科的学费是多少",
+        "HashMap 的底层原理是什么",
         "你好",
         "大模型是什么",
     ]

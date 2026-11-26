@@ -1,1 +1,0 @@
-print(r"../rag_qa/data/ai_data")

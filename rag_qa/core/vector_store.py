@@ -116,12 +116,12 @@ class VectorStore:
                 max_length=65535,
                 description="父文本完整原文"
             )
-            # 学科标签：检索时用作条件过滤
+            # 技术方向标签：检索时用作条件过滤
             schema.add_field(
                 field_name="source",
                 datatype=DataType.VARCHAR,
                 max_length=50,
-                description="学科/数据源名称，用于检索过滤"
+                description="技术方向/数据源名称，用于检索过滤"
             )
             # 入库时间戳：用于数据生命周期管理
             schema.add_field(
@@ -202,7 +202,7 @@ class VectorStore:
         混合检索（稠密+稀疏）+ 加权融合 + BGE重排序 + 父块去重
         :param query: 用户问题
         :param k: 初步召回数量
-        :param source_filter: 学科过滤
+        :param source_filter: 技术方向过滤
         :return: 重排后父块列表
         """
         # 1. 生成查询向量

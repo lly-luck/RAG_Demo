@@ -44,9 +44,9 @@ def load_documents_from_directory(directory_path):
         # 只处理子目录
         if not os.path.isdir(subject_path):
             continue
-        # 获取学科来源
+        # 获取技术方向来源
         source_subject = subject_dir.replace("_data", "")
-        logger.info(f"开始处理学科：{source_subject}")
+        logger.info(f"开始处理技术方向：{source_subject}")
         # 递归遍历
         for dirpath, dirnames, filenames in os.walk(subject_path):
             for filename in filenames:
@@ -137,8 +137,8 @@ def process_documents(directory_path, parent_chunk_size=conf.PARENT_CHUNK_SIZE,
     return child_chunk
 
 if __name__ == '__main__':
-    # load_documents_from_directory(r"D:\Hei_Ma\Java\Projects\Starge6\integrated_qa_system\rag_qa\data")
-    process_documents(r"D:\Hei_Ma\Java\Projects\Starge6\rag_system_test\rag_qa\data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    process_documents(data_dir)
 
 
 

@@ -32,7 +32,9 @@ class RAGSystem:
         # 3. 初始化大模型
         self.llm = init_chat_model(
             model=config.LLM_MODEL,
-            temperature=0.1  # 低温度，保证答案专业、稳定
+            temperature=0.1,  # 低温度，保证答案专业、稳定
+            api_key=config.LLM_API_KEY,
+            base_url=config.LLM_BASE_URL
         )
         logger.info("大模型初始化完成")
 
@@ -43,7 +45,7 @@ class RAGSystem:
         """
         根据用户问题生成最终答案（核心入口）
         :param query: 用户问题
-        :param source_filter: 学科过滤（可选）
+        :param source_filter: 技术方向过滤（可选）
         :param history: 对话历史
         :return: 最终回答
         """
@@ -108,11 +110,11 @@ if __name__ == "__main__":
     rag_system = RAGSystem()
 
     # # 测试专业问题
-    # test_query = "AI智能应用学科的课程目录是怎样的"
+    # test_query = "Spring Boot 自动配置的原理是什么"
     # # test_query = "你好"
-    # query1 = "AI智能应用学科的课程目录是怎样的"
-    # query2 = "人工智能学科和AI智能应用学科区别是什么"
-    # query3 = "人工智能学科在教育领域的应用有哪些？"
+    # query1 = "Spring Boot 自动配置的原理是什么"
+    # query2 = "Redis 和 MySQL 的区别是什么"
+    # query3 = "大模型在智能客服中有哪些应用"
     # final_answer = rag_system.generate_answer(query=query3, source_filter="java")
     #
     # print(f"用户问题：{test_query}")

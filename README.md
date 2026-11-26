@@ -7,6 +7,10 @@
 > ⚠️ **本项目是教学 / 演示性质的 Demo，不能直接用于生产环境。**
 > 实际使用前 **必须修改 `config.ini`** 中的 MySQL、Redis、Milvus、LLM 等配置（详见下方 [配置说明](#重要提示实际使用前必须修改-configini)）。
 
+> 🧠 **重要：仓库内不使用本地模型权重，且本地 `model/` 里的副本可能已经落后。**
+> `model/` 目录约 **6.7 GB**，因为 GitHub 单文件 100 MB 的限制无法入库（详见 [模型说明](#模型说明模型版本可能落后请自行下载最新版)）。
+> 仓库里的 `bge-m3`、`bge-reranker-large`、`bert_query_classifier` **很可能不是最新版本**，建议直接到官网 / 模型页下载当前最新版，而不要沿用旧副本。
+
 ---
 
 ## 目录
@@ -18,6 +22,7 @@
 - [大致实现过程](#大致实现过程)
 - [项目结构](#项目结构)
 - [快速开始](#快速开始)
+- [模型说明：模型版本可能落后，请自行下载最新版](#模型说明模型版本可能落后请自行下载最新版)
 - [⚠️ 重要提示：实际使用前必须修改 config.ini](#重要提示实际使用前必须修改-configini)
 - [接口一览](#接口一览)
 - [常见问题](#常见问题)
@@ -36,7 +41,7 @@
 | 父子分块 | 子块（300 字）负责精准召回，父块（1200 字）负责提供完整上下文，避免语义被切碎 |
 | 多格式解析 | PDF / Word / PPT / 图片 / Markdown / TXT，扫描件与图片走 OCR |
 | 会话记忆 | MySQL 按 `session_id` 保存对话历史，保留最近 5 轮注入 Prompt，支持历史会话回看 |
-| 前端页面 | 原生 HTML/CSS/JS，支持多会话管理、历史搜索、技术方向过滤、Markdown 渲染、深色模式 |
+| 前端页面 | 原生 HTML/CSS/JS，玻璃拟态 + 机器人科技背景（内联 SVG），支持多会话管理、历史搜索、技术方向过滤、Markdown 渲染、深/浅色主题 |
 
 ## 是否支持流式输出
 
@@ -209,10 +214,15 @@ rag_system_test/
 │   ├── edu_document_loaders/    # PDF / Word / PPT / 图片 OCR 加载器
 │   ├── edu_text_spliter/        # 中英文递归分割器、Markdown 分割器
 │   └── data/                    # 原始知识库文档（按 <方向>_data 分目录）
-├── static/index.html            # 单文件前端：会话管理、流式渲染、深色模式
-├── model/                       # 本地模型权重（已 .gitignore，需自行下载）
-└── test/                        # 临时测试脚本
+├── static/                      # 前端页面
+│   ├── index.html               # 结构：机器人背景、侧边栏、聊天区、输入区
+│   ├── style.css                # 样式：玻璃拟态、主题变量、动画、响应式
+│   ├── app.js                   # 交互：会话管理、流式渲染、主题切换、轻提示
+│   └── favicon.svg              # 站点图标
+└── model/                       # 本地模型权重（已 .gitignore，需自行下载最新版）
 ```
+
+> 🧠 `model/` 里的模型可能是旧版本，建议按 [模型说明](#模型说明模型版本可能落后请自行下载最新版) 重新下载。
 
 ## 快速开始
 
@@ -227,17 +237,22 @@ pip install -r requirements.txt
 
 ### 2. 下载本地模型
 
-`model/` 已被 `.gitignore` 忽略，需要自行下载并保持如下目录结构（路径由代码写死）：
+> ⚠️ **模型版本提示：`model/` 中的模型可能是较旧的版本，推荐去官网下载当前最新模型。**
+> 本项目参考实现基于 2023～2024 年的 `bge-m3` / `bge-reranker-large`，这两者之后官方已迭代出更强、更轻的版本（例如 `bge-reranker-v2-m3`、`bge-m3` 的新版权重），`bert_query_classifier` 更是按当时语料微调的小模型，**在别的业务数据上效果会下降**。
+> 完整说明（官方地址、体积、替换建议）见 **[MODEL_NOTICE.md](MODEL_NOTICE.md)**。
+
+`model/` 已被 `.gitignore` 忽略（约 6.7 GB，GitHub 单文件上限 100 MB，无法入库），需要自行下载并保持如下目录结构（路径由代码写死）：
 
 ```text
 model/
 ├── bge-m3/                  # 向量模型：BAAI/bge-m3
-├── bge-reranker-large/      # 重排模型：BAAI/bge-reranker-large
+├── bge-reranker-large/      # 重排模型：BAAI/bge-reranker-large（可换 bge-reranker-v2-m3）
 └── bert_query_classifier/   # 问题分类模型：微调后的 BERT 二分类（config.json + model.safetensors）
 ```
 
 - HuggingFace：<https://huggingface.co/BAAI/bge-m3>、<https://huggingface.co/BAAI/bge-reranker-large>
-- 国内可用 ModelScope 镜像下载（`modelscope` 已在依赖中）。
+- 国内可用 ModelScope 镜像下载（`modelscope` 已在依赖中），也可以直接下载后解压到 `model/<名称>/`。
+- 换模型时注意同步修改代码里的路径与维度假设（`--model` 名称、`768/1024` 维、`normalize_embeddings`、重排分数阈值等）。
 
 ### 3. 准备 MySQL / Redis / Milvus
 
