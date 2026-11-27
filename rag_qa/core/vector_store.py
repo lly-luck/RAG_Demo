@@ -1,50 +1,31 @@
 import hashlib
-import os
-from milvus_model.hybrid import BGEM3EmbeddingFunction
+
 from pymilvus import MilvusClient, DataType
 
-from base.config import Config
+from base.config import config
 from base.logger import logger
+from rag_qa.core.model_registry import get_embedding_model, get_reranker_model
 
-from pymilvus import MilvusClient, DataType, AnnSearchRequest, WeightedRanker
-from sentence_transformers import CrossEncoder
+from pymilvus import AnnSearchRequest, WeightedRanker
 from langchain_core.documents import Document
 
 
-# 加载项目全局配置
-conf = Config()
-
-
-class VectorStore:
+class MilvusVectorStore:
     """
-    向量存储管理类
-    封装 Milvus 连接、BGE-M3 模型初始化、集合自动创建、索引构建逻辑
+    Milvus 实现（external 模式）。
+    embedded 模式请使用 rag_qa.core.chroma_store.ChromaVectorStore。
     """
 
-    def __init__(self):
-        """
-        构造方法：执行完整初始化流程
-        1. 加载本地 BGE-M3 混合嵌入模型
-        2. 建立 Milvus 连接，自动创建目标数据库并切换
-        3. 检测集合，不存在则自动创建 Schema + 稠密/稀疏索引
-        """
-        # ---------------------- 1. 初始化 BGE-M3 混合嵌入模型 ----------------------
-        # 项目路径
-        project_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        bge_m3_model_path = os.path.join(project_path, "model", "bge-m3")
-
-        # 实例化混合向量模型，同时支持稠密向量、稀疏向量输出
-        self.embedding = BGEM3EmbeddingFunction(model_name_or_path=bge_m3_model_path)
+    def __init__(self, embedding=None, reranker=None):
+        # 1. 共享的 BGE-M3 / Reranker 单例，避免重复加载
+        self.embedding = embedding or get_embedding_model()
         logger.info("BGE-M3 混合嵌入模型初始化完成")
 
-        # ---------------------- 2. Milvus 连接 + 数据库管理 ----------------------
-       # 创建Milvus客户端连接
-        self.client = MilvusClient(
-            uri=conf.MILVUS_URI
-        )
-        logger.info(f"Milvus 基础连接成功")
+        # 2. Milvus 连接 + 数据库管理
+        self.client = MilvusClient(uri=config.MILVUS_URI)
+        logger.info("Milvus 基础连接成功")
 
-        target_db = conf.MILVUS_DATABASE_NAME
+        target_db = config.MILVUS_DATABASE_NAME
         db_list = self.client.list_databases()
         # 判断数据库是否存在，不存在自动新建
         if target_db not in db_list:
@@ -58,10 +39,20 @@ class VectorStore:
         # ---------------------- 3. 自动创建向量集合与索引 ----------------------
         self.create_collection()
 
-        # ---------------------- 4. 初始化重排序模型 ----------------------
-        bge_reranker_path = os.path.join(project_path, "model", "bge-reranker-large")
-        self.reranker = CrossEncoder(bge_reranker_path)
+        # ---------------------- 4. 重排序模型（共享单例） ----------------------
+        self.reranker = reranker or get_reranker_model()
         logger.info("BGE-Reranker 重排序模型初始化完成")
+
+    def warmup(self) -> None:
+        """模型已在构造时加载，保留接口以兼容两种后端。"""
+        return None
+
+    def count(self) -> int:
+        try:
+            stats = self.client.get_collection_stats(config.MILVUS_COLLECTION_NAME)
+            return int(stats.get("row_count", 0))
+        except Exception:
+            return 0
 
     def create_collection(self):
         """
@@ -69,7 +60,7 @@ class VectorStore:
         逻辑：集合不存在才创建，避免重复初始化
         内容：定义数据表Schema、字段含义、稠密向量索引、稀疏向量索引
         """
-        coll_name = conf.MILVUS_COLLECTION_NAME
+        coll_name = config.MILVUS_COLLECTION_NAME
         if not self.client.has_collection(coll_name):
             # 创建表结构：关闭自动主键，开启动态字段支持
             schema = self.client.create_schema(auto_id=False, enable_dynamic_field=True)
@@ -194,10 +185,10 @@ class VectorStore:
             })
         if data:
             # 保存数据到 Milvus
-            self.client.upsert(collection_name=conf.MILVUS_COLLECTION_NAME, data=data)
+            self.client.upsert(collection_name=config.MILVUS_COLLECTION_NAME, data=data)
             logger.info(f"已插入或更新 {len(data)} 个文档")
 
-    def hybrid_search_with_reranker(self, query, k=conf.RETRIEVAL_K, source_filter=None):
+    def hybrid_search_with_reranker(self, query, k=None, source_filter=None):
         """
         混合检索（稠密+稀疏）+ 加权融合 + BGE重排序 + 父块去重
         :param query: 用户问题
@@ -205,6 +196,11 @@ class VectorStore:
         :param source_filter: 技术方向过滤
         :return: 重排后父块列表
         """
+        k = int(k or config.RETRIEVAL_K)
+        if source_filter and source_filter not in config.VALID_SOURCES:
+            logger.warning("非法 source_filter=%s，已忽略", source_filter)
+            source_filter = None
+
         # 1. 生成查询向量
         embedding_result = self.embedding([query])
         dense_q = embedding_result['dense'][0]
@@ -240,7 +236,7 @@ class VectorStore:
 
         # 4. 执行混合检索
         results = self.client.hybrid_search(
-            collection_name=conf.MILVUS_COLLECTION_NAME,
+            collection_name=config.MILVUS_COLLECTION_NAME,
             reqs=[dense_req, sparse_req],
             ranker=ranker,
             limit=k,
@@ -263,7 +259,7 @@ class VectorStore:
             parent_docs = [doc for score, doc in sorted_docs]
 
         # 返回候选集
-        return parent_docs[:conf.CANDIDATE_M]
+        return parent_docs[:config.CANDIDATE_M]
 
     def __to_doc(self, entity):
         """Milvus 结果转为 Document 对象"""
@@ -293,9 +289,13 @@ class VectorStore:
 
 
 
+# 兼容旧导入：from rag_qa.core.vector_store import VectorStore
+VectorStore = MilvusVectorStore
+
+
 if __name__ == '__main__':
     # 单元测试：初始化向量存储，自动完成模型加载、集合创建、索引构建
-    vs = VectorStore()
+    vs = MilvusVectorStore()
     # project_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # # 加载拆分文档
     # from document_processor import process_documents

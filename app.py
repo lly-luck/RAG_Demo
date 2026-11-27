@@ -1,38 +1,56 @@
-# Web框架核心
-from fastapi import FastAPI, WebSocket, HTTPException, Query, Depends, Request, Response
-from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from starlette.websockets import WebSocketDisconnect
-# 系统与工具
-import os
-import asyncio
+# Web 框架核心
 import json
-import uuid
-import time
 import re
-from typing import Optional, List, Dict, Any
-# 业务层依赖
+import time
+import uuid
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from faq_milvus import IntegratedQASystem
+from starlette.websockets import WebSocketDisconnect, WebSocketState
+
+# 业务层依赖
+from base import paths
 from base.config import config
-from mysql_qa.db.mysql_client import MySQLClient
+from base.llm_factory import get_llm_factory
+from base.logger import logger
+from base.settings_store import get_settings_store
+from faq_milvus import IntegratedQASystem
+from storage.db.factory import get_db_client
+
 
 # 应用实例化
 app = FastAPI(title="问答系统API", description="集成FAQ和RAG的智能问答系统")
 
-# 跨域配置
+# 跨域配置：仅本地演示使用，不携带凭证
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 实例初始化
+# 首次启动：准备用户数据目录并复制预构建种子
+_seed_result = paths.ensure_user_data()
+if _seed_result["missing"]:
+    logger.warning("缺少预构建种子：%s", ", ".join(_seed_result["missing"]))
+
+# 实例初始化（会加载 BERT 分类器、BGE-M3，并连接配置的存储后端）
 qa_system = IntegratedQASystem()
-mysql_client = MySQLClient()
+db_client = get_db_client()
+settings_store = get_settings_store()
+llm_factory = get_llm_factory()
+
+# 预加载 reranker，避免首次提问等待；external Milvus 实现中为空操作
+try:
+    qa_system.rag_system.vector_store.warmup()
+except Exception as exc:  # noqa: BLE001
+    logger.warning("向量模型预热失败（首次查询时重试）：%s", exc)
+
 
 GREETING_PATTERNS = [
     {
@@ -50,10 +68,10 @@ GREETING_PATTERNS = [
     {
         "pattern": r"^(干嘛呢|你在干嘛|做什么)",
         "response": "我正在待命，随时为你解答技术相关的问题！有什么我可以帮你的？"
-    }
+    },
 ]
 
-# 检查日常问候
+
 def check_greeting(query: str) -> Optional[str]:
     query_text = query.strip()
     for pattern_info in GREETING_PATTERNS:
@@ -61,179 +79,216 @@ def check_greeting(query: str) -> Optional[str]:
             return pattern_info["response"]
     return None
 
-# 创建新会话
+
+class SettingsPayload(BaseModel):
+    base_url: str
+    model: str
+    api_key: Optional[str] = None
+
+
+# ============================ 会话接口 ============================
 @app.post("/api/create_session")
 async def create_session():
-    session_id = str(uuid.uuid4())  # 生成唯一会话 ID
-    return {"session_id": session_id}  # 返回会话 ID
+    session_id = str(uuid.uuid4())
+    return {"session_id": session_id}
 
-# 查询历史消息
+
 @app.get("/api/history/{session_id}")
 async def get_history(session_id: str):
     try:
-        # 获取指定会话的历史记录
-        history = mysql_client.fetch_recent_history(session_id)
-        # 获取该会话的总对话轮数
-        total_count = mysql_client.get_session_count(session_id)
-        # 返回会话 ID、历史记录和总数
+        history = db_client.fetch_recent_history(session_id)
+        total_count = db_client.get_session_count(session_id)
         return {
             "session_id": session_id,
             "history": history,
-            "total_count": total_count
+            "total_count": total_count,
         }
-    except Exception as e:
-        # 抛出 HTTP 异常，包含错误信息
-        raise HTTPException(status_code=500, detail=f"获取历史记录失败: {str(e)}")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"获取历史记录失败: {exc}")
 
-# 查询会话总数
+
 @app.get("/api/session_count/{session_id}")
 async def get_session_count(session_id: str):
     try:
-        total_count = mysql_client.get_session_count(session_id)
+        total_count = db_client.get_session_count(session_id)
         return {"session_id": session_id, "total_count": total_count}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取会话数失败: {str(e)}")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"获取会话数失败: {exc}")
 
-# 查询所有会话列表
+
 @app.get("/api/sessions")
-async def get_all_sessions(response: Response):
+async def get_all_sessions():
     try:
-        sessions = mysql_client.fetch_all_sessions()
+        sessions = db_client.fetch_all_sessions()
         return {"sessions": sessions, "total": len(sessions)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取会话列表失败: {str(e)}")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"获取会话列表失败: {exc}")
 
-# 清除所有会话历史
+
 @app.delete("/api/history")
 async def clear_all_history():
     try:
-        success = mysql_client.clear_all_sessions_history()
+        success = db_client.clear_all_sessions_history()
         if success:
             return {"status": "success", "message": "所有历史记录已清除"}
-        else:
-            raise HTTPException(status_code=500, detail="清除历史记录失败")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"清除历史记录失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="清除历史记录失败")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"清除历史记录失败: {exc}")
 
+
+# ============================ 设置接口 ============================
+@app.get("/api/settings")
+async def get_settings():
+    return settings_store.public_dict()
+
+
+@app.post("/api/settings")
+async def save_settings(payload: SettingsPayload):
+    try:
+        settings_store.save_llm(payload.base_url, payload.model, payload.api_key)
+        if not settings_store.get_llm().configured:
+            raise HTTPException(status_code=400, detail="请填写有效的 API Key")
+        llm_factory.reload()
+        return {"ok": True, "settings": settings_store.public_dict()}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/settings/test")
+async def test_settings(payload: SettingsPayload):
+    result = await llm_factory.test_connection(
+        base_url=payload.base_url,
+        model=payload.model,
+        api_key=payload.api_key,
+    )
+    return result
+
+
+# ============================ WebSocket 流式问答 ============================
 @app.websocket("/api/stream")
 async def websocket_endpoint(websocket: WebSocket):
-    # 接受客户端建立WebSocket长连接
     await websocket.accept()
     try:
-        # 循环监听客户端消息，理论支持同一连接多次发送提问
         while True:
-            # 接收前端发来的JSON字符串消息
             data = await websocket.receive_text()
-            # 字符串转为字典，提取请求参数
             request_data = json.loads(data)
-            # 用户提问内容
             query = request_data.get("query")
-            # 知识库数据源过滤条件，用于限定检索范围
             source_filter = request_data.get("source_filter")
-            # 会话ID：前端传则复用，不传自动生成UUID作为会话唯一标识
             session_id = request_data.get("session_id", str(uuid.uuid4()))
-            # 记录本轮问答起始时间，用于计算整体耗时
             start_time = time.time()
 
-            # 参数校验：提问为空/全空格，返回错误并继续等待下一条消息
             if not query or not query.strip():
                 await websocket.send_json({"type": "error", "error": "查询内容不能为空"})
                 continue
 
-            # 向前端发送开始标记，告知前端准备接收流式回答
+            # 只允许配置中的技术方向，防止任意过滤值
+            if source_filter and source_filter not in config.VALID_SOURCES:
+                source_filter = None
+
             await websocket.send_json({"type": "start", "session_id": session_id})
 
-            # ========== 分支1：问候语快捷匹配逻辑 ==========
-            # 校验用户输入是否为你好、在吗、你是谁等固定问候语
+            # 分支 1：问候语
             greeting_response = check_greeting(query)
             if greeting_response:
-                # 将用户问题+AI固定问候回答存入MySQL会话历史表
-                mysql_client.update_session_history(session_id, query, greeting_response)
-                # 逐字符推送问候文本，模拟打字机输出效果
+                db_client.update_session_history(session_id, query, greeting_response)
                 for char in greeting_response:
                     await websocket.send_json({
                         "type": "token",
                         "token": char,
-                        "session_id": session_id
+                        "session_id": session_id,
                     })
-                # 全部字符推送完成，发送结束标识，附带总耗时
                 await websocket.send_json({
                     "type": "end",
                     "session_id": session_id,
                     "is_complete": True,
-                    "processing_time": time.time() - start_time
+                    "processing_time": time.time() - start_time,
                 })
-                # 本轮问答结束，跳出while循环；当前代码逻辑会进入finally关闭连接
                 continue
 
-            # ========== 分支2：正式RAG知识库问答业务逻辑 ==========
+            # 分支 2：FAQ / RAG
             try:
-                # qa_system.query 是生成器函数，持续返回(文本分片, 是否输出完成)
-                async for token, is_complete in qa_system.search(query, scores_filter=source_filter, session_id=session_id):
-                    # 推送单段回答分片给前端
+                async for token, is_complete in qa_system.search(
+                    query,
+                    scores_filter=source_filter,
+                    session_id=session_id,
+                ):
                     await websocket.send_json({
                         "type": "token",
                         "token": token,
-                        "session_id": session_id
+                        "session_id": session_id,
                     })
-                    # 生成器标记回答全部输出完毕，发送结束包并终止循环
                     if is_complete:
                         await websocket.send_json({
                             "type": "end",
                             "session_id": session_id,
                             "is_complete": True,
-                            "processing_time": time.time() - start_time
+                            "processing_time": time.time() - start_time,
                         })
                         break
-            # RAG检索/大模型生成过程中出现异常，向前端返回错误信息
-            except Exception as query_error:
-                await websocket.send_json({"type": "error", "error": f"查询处理失败: {str(query_error)}"})
-                # 异常后终止本轮问答，跳出循环关闭连接
+            except Exception as query_error:  # noqa: BLE001
+                logger.exception("查询处理失败")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"查询处理失败: {query_error}",
+                })
                 break
-    # 捕获客户端主动断开连接事件（关闭页面、刷新、手动关闭ws）
-    except WebSocketDisconnect as e:
-        print(f"WebSocket disconnected: code={e.code}, reason={e.reason}")
-    # 捕获其余所有未知异常
-    except Exception as e:
-        print(f"WebSocket error: {str(e)}")
-        # 尝试向前端推送错误提示；连接已断开时发送会报错，用try忽略
+    except WebSocketDisconnect as exc:
+        logger.info("WebSocket disconnected: code=%s, reason=%s", exc.code, exc.reason)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("WebSocket error")
         try:
-            await websocket.send_json({"type": "error", "error": str(e)})
-        except:
+            await websocket.send_json({"type": "error", "error": str(exc)})
+        except Exception:
             pass
-    # 无论正常结束、异常、客户端断开，最终都会执行，关闭ws连接释放资源
     finally:
-        try:
-            await websocket.close()
-        except Exception as e:
-            print(f"Error closing WebSocket: {str(e)}")
+        # 连接已被客户端关闭时不再重复 close，避免 ASGI 警告
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
 
 
-
-# 健康检查接口
+# ============================ 健康检查 / 静态资源 ============================
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    vector_count = None
+    try:
+        vector_count = qa_system.rag_system.vector_store.count()
+    except Exception:
+        vector_count = None
+    return {
+        "status": "healthy",
+        "ready": True,
+        "storage_backend": config.STORAGE_BACKEND,
+        "llm_configured": settings_store.is_configured(),
+        "vector_count": vector_count,
+    }
 
-# 获取技术方向
+
 @app.get("/api/sources")
 async def get_sources():
     return {"sources": config.VALID_SOURCES}
 
-# 挂载静态文件服务
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+app.mount("/static", StaticFiles(directory=str(paths.STATIC_DIR)), name="static")
+
 
 @app.get("/")
 async def read_root():
     return FileResponse(
-        "static/index.html",
+        str(paths.STATIC_DIR / "index.html"),
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
-            "Expires": "0"
-        }
+            "Expires": "0",
+        },
     )
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080, reload=False)
+
+    uvicorn.run(app, host=config.SERVER_HOST, port=config.SERVER_PORT, reload=False)

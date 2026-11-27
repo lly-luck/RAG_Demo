@@ -30,6 +30,18 @@ const emojiBtn = document.getElementById('emojiBtn'); // 表情按钮
 const imageBtn = document.getElementById('imageBtn'); // 图片按钮
 const fileBtn = document.getElementById('fileBtn'); // 文件按钮
 
+// 大模型设置
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const settingsClose = document.getElementById('settingsClose');
+const settingsPreset = document.getElementById('settingsPreset');
+const settingsBaseUrl = document.getElementById('settingsBaseUrl');
+const settingsModel = document.getElementById('settingsModel');
+const settingsApiKey = document.getElementById('settingsApiKey');
+const settingsStatus = document.getElementById('settingsStatus');
+const settingsTest = document.getElementById('settingsTest');
+const settingsSave = document.getElementById('settingsSave');
+
 // API URL 前缀，根据部署环境调整
 const API_BASE_URL = ''; // 如果 API 和前端在同一域，可以留空
 
@@ -51,6 +63,147 @@ const storage = {
         }
     }
 };
+
+// ==================== 大模型设置 ====================
+const SETTINGS_PRESETS = {
+    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+    qwen: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+    zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+    openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    custom: { baseUrl: '', model: '' }
+};
+
+let settingsLoaded = false;
+
+function setSettingsStatus(text, type) {
+    settingsStatus.textContent = text || '';
+    settingsStatus.classList.remove('is-ok', 'is-error');
+    if (type === 'ok') settingsStatus.classList.add('is-ok');
+    if (type === 'error') settingsStatus.classList.add('is-error');
+}
+
+function openSettings() {
+    settingsOverlay.classList.add('is-visible');
+    settingsOverlay.setAttribute('aria-hidden', 'false');
+    if (!settingsLoaded) {
+        loadSettings(false);
+    }
+    setTimeout(() => settingsBaseUrl.focus(), 80);
+}
+
+function closeSettings() {
+    settingsOverlay.classList.remove('is-visible');
+    settingsOverlay.setAttribute('aria-hidden', 'true');
+}
+
+function applySettingsPreset() {
+    const preset = SETTINGS_PRESETS[settingsPreset.value];
+    if (!preset || settingsPreset.value === 'custom') return;
+    settingsBaseUrl.value = preset.baseUrl;
+    settingsModel.value = preset.model;
+}
+
+function detectSettingsPreset(baseUrl, model) {
+    for (const [key, preset] of Object.entries(SETTINGS_PRESETS)) {
+        if (key === 'custom') continue;
+        if (preset.baseUrl === baseUrl && preset.model === model) return key;
+    }
+    return 'custom';
+}
+
+async function loadSettings(openIfMissing) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings`, { cache: 'no-store' });
+        if (!response.ok) throw new Error('读取设置失败');
+        const data = await response.json();
+
+        settingsBaseUrl.value = data.base_url || 'https://api.deepseek.com';
+        settingsModel.value = data.model || 'deepseek-chat';
+        settingsApiKey.value = '';
+        settingsApiKey.placeholder = data.api_key_masked
+            ? `已保存 ${data.api_key_masked}（留空保持）`
+            : '请输入 API Key';
+        settingsPreset.value = detectSettingsPreset(data.base_url, data.model);
+        settingsLoaded = true;
+
+        if (!data.configured && openIfMissing) {
+            setSettingsStatus('首次使用请先填写大模型配置；FAQ 和问候语无需配置即可使用。');
+            openSettings();
+        }
+    } catch (error) {
+        console.warn('读取大模型设置失败:', error);
+        setSettingsStatus('无法读取设置，请确认本地服务已启动。', 'error');
+    }
+}
+
+async function testSettings() {
+    const baseUrl = settingsBaseUrl.value.trim();
+    const model = settingsModel.value.trim();
+    if (!baseUrl || !model) {
+        setSettingsStatus('请先填写 Base URL 和模型名。', 'error');
+        return;
+    }
+    settingsTest.disabled = true;
+    setSettingsStatus('正在测试连接…');
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_url: baseUrl,
+                model: model,
+                api_key: settingsApiKey.value.trim()
+            })
+        });
+        const result = await response.json();
+        if (result.ok) {
+            setSettingsStatus(`连接成功（${result.latency_ms ?? '-'}ms）：${result.message || 'OK'}`, 'ok');
+        } else {
+            setSettingsStatus(result.error || '连接失败', 'error');
+        }
+    } catch (error) {
+        setSettingsStatus(`请求失败：${error.message || error}`, 'error');
+    } finally {
+        settingsTest.disabled = false;
+    }
+}
+
+async function saveSettings() {
+    const baseUrl = settingsBaseUrl.value.trim();
+    const model = settingsModel.value.trim();
+    if (!baseUrl || !model) {
+        setSettingsStatus('请先填写 Base URL 和模型名。', 'error');
+        return;
+    }
+    settingsSave.disabled = true;
+    setSettingsStatus('正在保存…');
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_url: baseUrl,
+                model: model,
+                api_key: settingsApiKey.value.trim()
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || '保存失败');
+        }
+        setSettingsStatus('保存成功，配置已生效。', 'ok');
+        settingsApiKey.value = '';
+        if (data.settings && data.settings.api_key_masked) {
+            settingsApiKey.placeholder = `已保存 ${data.settings.api_key_masked}（留空保持）`;
+        }
+        showNotification('大模型设置已保存', 'success');
+        setTimeout(closeSettings, 500);
+    } catch (error) {
+        setSettingsStatus(`保存失败：${error.message || error}`, 'error');
+    } finally {
+        settingsSave.disabled = false;
+    }
+}
 
 // HTML 转义：用于纯文本降级渲染（Markdown 链路走 sanitizeHtml 清洗）
 function escapeHtml(text) {
@@ -92,6 +245,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 加载技术方向
     await loadSources();
+
+    // 大模型设置事件
+    settingsToggle.addEventListener('click', openSettings);
+    settingsClose.addEventListener('click', closeSettings);
+    settingsPreset.addEventListener('change', applySettingsPreset);
+    settingsTest.addEventListener('click', testSettings);
+    settingsSave.addEventListener('click', saveSettings);
+    settingsOverlay.addEventListener('click', (event) => {
+        if (event.target === settingsOverlay) closeSettings();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && settingsOverlay.classList.contains('is-visible')) {
+            closeSettings();
+        }
+    });
+    await loadSettings(true);
 
     // 事件监听器
     sendBtn.addEventListener('click', sendMessage); // 发送按钮点击事件
@@ -491,6 +660,9 @@ async function sendMessage() {
         chatHistory.querySelectorAll('.message.is-pending').forEach(el => el.remove());
         const reason = (error && error.message) ? error.message : '网络连接异常';
         addMessage('system', `抱歉，发生错误: ${reason}`);
+        if (String(reason).includes('尚未配置')) {
+            openSettings();
+        }
     } finally {
         isResponseInProgress = false;
         sendBtn.disabled = false;
@@ -588,6 +760,9 @@ async function handleStreamingResponse(query, filter, contentElement, typingIndi
                         contentElement.innerHTML = safeParseMarkdown(
                             accumulatedContent.trim() ? accumulatedContent : '未找到相关答案，请尝试其他问题。'
                         );
+                        if (accumulatedContent.includes('尚未配置') || accumulatedContent.includes('API Key')) {
+                            openSettings();
+                        }
                         finish(null);
                         break;
 

@@ -2,23 +2,22 @@
 RAG 问题分类模块
 功能：使用 BERT 模型对用户问题进行二分类，区分 通用知识 与 专业咨询
 """
-import os
-
 import torch
 from transformers import BertTokenizer, BertForSequenceClassification
+
+from base import paths
 from base.logger import logger
 
 
 class QueryClassifier:
     """用户问题分类器"""
 
-    def __init__(self):
-        # BERT模型目录
-        project_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        model_dir = os.path.join(project_path, "model", "bert_query_classifier")
-        # BERT预训练自带 tokenizer（字粒度）
+    def __init__(self, model_dir=None):
+        # BERT 模型目录：默认便携目录/app/model/bert_query_classifier
+        model_dir = str(model_dir or (paths.MODELS_DIR / "bert_query_classifier"))
+        # BERT 预训练自带 tokenizer（字粒度）
         self.tokenizer = BertTokenizer.from_pretrained(model_dir)
-        # BERT问题分类模型
+        # BERT 问题分类模型
         self.bert_model = BertForSequenceClassification.from_pretrained(model_dir).eval()
         logger.info("问题分类模型加载成功")
 

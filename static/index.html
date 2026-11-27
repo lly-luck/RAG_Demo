@@ -24,10 +24,10 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <!-- 主题样式 -->
     <link rel="stylesheet" href="/static/style.css">
-    <!-- 图标库 -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Markdown 解析 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 图标库（本地 vendor，离线可用） -->
+    <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
+    <!-- Markdown 解析（本地 vendor，离线可用） -->
+    <script src="/static/vendor/marked.min.js"></script>
 </head>
 <body>
     <!-- ==================== 机器人科技背景 ==================== -->
@@ -49,6 +49,9 @@
         </div>
         <div class="header-actions">
             <div class="badge-pill"><span class="pulse-dot"></span>RAG 智能检索</div>
+            <button class="theme-toggle" id="settingsToggle" type="button" aria-label="大模型设置" title="大模型设置">
+                <i class="fas fa-gear"></i>
+            </button>
             <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
                 <i class="fas fa-sun"></i>
             </button>
@@ -218,6 +221,59 @@
                     <span class="sr-only">加载中</span>
                 </div>
             </section>
+        </div>
+    </div>
+
+    <!-- ==================== 大模型设置 ==================== -->
+    <div class="settings-overlay" id="settingsOverlay" aria-hidden="true">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+            <div class="settings-header">
+                <h2 id="settingsTitle"><i class="fas fa-gear"></i> 大模型设置</h2>
+                <button class="settings-close" id="settingsClose" type="button" aria-label="关闭设置">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+
+            <p class="settings-hint">
+                API Key 仅保存在本机用户目录，不会上传。未配置时 FAQ 和问候语仍可使用。
+            </p>
+
+            <label class="settings-field">
+                <span>服务预设</span>
+                <select id="settingsPreset">
+                    <option value="deepseek">DeepSeek（默认）</option>
+                    <option value="qwen">通义千问（兼容模式）</option>
+                    <option value="zhipu">智谱 GLM</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="custom">自定义</option>
+                </select>
+            </label>
+
+            <label class="settings-field">
+                <span>Base URL</span>
+                <input id="settingsBaseUrl" type="url" placeholder="https://api.deepseek.com" autocomplete="off">
+            </label>
+
+            <label class="settings-field">
+                <span>模型名</span>
+                <input id="settingsModel" type="text" placeholder="deepseek-chat" autocomplete="off">
+            </label>
+
+            <label class="settings-field">
+                <span>API Key</span>
+                <input id="settingsApiKey" type="password" placeholder="留空表示保持原 Key" autocomplete="new-password">
+            </label>
+
+            <div class="settings-status" id="settingsStatus" role="status" aria-live="polite"></div>
+
+            <div class="settings-actions">
+                <button class="settings-btn secondary" id="settingsTest" type="button">
+                    <i class="fas fa-plug"></i> 测试连接
+                </button>
+                <button class="settings-btn primary" id="settingsSave" type="button">
+                    <i class="fas fa-floppy-disk"></i> 保存
+                </button>
+            </div>
         </div>
     </div>
 

@@ -17,6 +17,7 @@ env/
 logs/
 *.log
 *.pid
+jieba.cache
 
 # ---- 本地数据库 / 索引文件 ----
 *.db
@@ -34,3 +35,13 @@ desktop.ini
 
 # ---- 工具临时目录 ----
 .dsh-acl-recovery/
+
+# ---- 便携包构建产物 ----
+dist/
+build/
+packaging/build/
+packaging/vendor_tmp/
+packaging/seeds/vector_db/
+*.7z
+*.zip
+!static/vendor/**/*.zip

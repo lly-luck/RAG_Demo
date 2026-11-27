@@ -4,7 +4,17 @@
 为后续检索、匹配提供标准化文本
 """
 import jieba
+
+from base import paths
 from base.logger import logger
+
+# 把 jieba 前缀词典缓存固定到可写用户目录，避免在程序/项目目录生成 jieba.cache
+try:
+    _jieba_cache_dir = paths.USER_DATA_DIR / "cache"
+    _jieba_cache_dir.mkdir(parents=True, exist_ok=True)
+    jieba.dt.tmp_dir = str(_jieba_cache_dir)
+except OSError:
+    pass
 
 
 def preprocess_text(text):

@@ -10,7 +10,7 @@
 
 | 原因 | 说明 |
 | --- | --- |
-| 体积 | 本地 `model/` 约 **6.7 GB**（`bge-m3` 的 `pytorch_model.bin`、`onnx/model.onnx`、`bge-reranker-large` 的权重各占数百 MB～2 GB） |
+| 体积 | 本地 `model/` 约 **7.9 GB**（`bge-m3` 的 `pytorch_model.bin`、`onnx/model.onnx`、`bge-reranker-large`、`bge-reranker-base` 的权重各占数百 MB～2 GB） |
 | GitHub 限制 | 单文件硬上限 **100 MB**，超过直接拒绝推送；仓库建议控制在 1 GB 以内 |
 | 发布习惯 | 权重属于"可再下载的产物"，用官方的模型仓库分发更合适，代码仓库只保留代码与配置 |
 
@@ -24,9 +24,10 @@
 | --- | --- | --- |
 | `model/bge-m3/` | Embedding 向量模型，负责把文档块与问题编码成向量 | 参考实现基于 `BAAI/bge-m3` 的早期发布；官方后续持续更新权重，旧副本在长文本、多语言、稀疏/多向量检索上的表现弱于新版 |
 | `model/bge-reranker-large/` | 交叉编码器重排模型，对召回候选重新打分 | 官方已推出 `bge-reranker-v2-m3`（更小、更快、多语言更强），`large` 这一代相对老 |
+| `model/bge-reranker-base/` | **便携包默认使用的重排模型**（约 1.1GB），比 large 小 1GB | 用 `packaging/prepare_models.py` 从 ModelScope 下载 `model.safetensors` 等文件即可 |
 | `model/bert_query_classifier/` | "通用知识 / 专业咨询"二分类，决定走 FAQ 还是 RAG | 这是**按当时语料微调**的小模型，换业务、换语料后准确率会明显下降，建议用你自己的数据重训 |
 
-另外 `model/` 内还混有下载工具产生的缓存/重复文件（`.msc`、`.mv`、`onnx/model.onnx` 与 `pytorch_model.bin` 是同一权重的两种格式），可以只保留实际用到的那一份来省空间。
+另外 `model/` 内还混有下载工具产生的缓存/重复文件（`.msc`、`.mv`、`onnx/model.onnx` 与 `pytorch_model.bin` 是同一权重的两种格式），可以只保留实际用到的那一份来省空间。便携包构建时会自动排除 `model/bge-m3/onnx`（代码不读取）和 `model/bge-reranker-large`（使用 base 版本），模型总量约 3.6GB。
 
 ---
 
@@ -44,7 +45,8 @@
 ```text
 model/
 ├── bge-m3/                  # 包含 config.json / tokenizer* / pytorch_model.bin（或 model.safetensors）
-├── bge-reranker-large/      # 同上
+├── bge-reranker-base/       # 便携包默认；config.json + model.safetensors + tokenizer*
+├── bge-reranker-large/      # 可选（external/开发态）；与 base 二选一
 └── bert_query_classifier/   # config.json + model.safetensors + vocab.txt
 ```
 

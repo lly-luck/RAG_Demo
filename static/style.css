@@ -1555,7 +1555,197 @@ html.dark-mode .chat-input-container {
 }
 
 /* --------------------------------------------------------------------------
-   15. 无障碍：减少动效
+   15. 大模型设置弹窗
+   -------------------------------------------------------------------------- */
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(2, 6, 15, 0.58);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), visibility 0s linear 220ms;
+}
+
+.settings-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--transition), visibility 0s linear 0s;
+}
+
+.settings-modal {
+    width: min(520px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    padding: 24px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-strong);
+    color: var(--text);
+    box-shadow: var(--shadow-lg);
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.settings-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.settings-header h2 i {
+    color: var(--accent-1);
+    margin-right: 6px;
+}
+
+.settings-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+    color: var(--text-soft);
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.settings-close:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface);
+}
+
+.settings-hint {
+    margin: 0 0 18px;
+    color: var(--text-mute);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+    color: var(--text-soft);
+}
+
+.settings-field span {
+    font-weight: 600;
+}
+
+.settings-field input,
+.settings-field select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+    border-color: var(--accent-1);
+    box-shadow: 0 0 0 3px var(--glow-1);
+}
+
+.settings-status {
+    min-height: 20px;
+    margin: 4px 0 14px;
+    color: var(--text-mute);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.settings-status.is-ok {
+    color: #16a34a;
+}
+
+.settings-status.is-error {
+    color: #dc2626;
+}
+
+html:not(.dark-mode) .settings-status.is-ok {
+    color: #15803d;
+}
+
+html:not(.dark-mode) .settings-status.is-error {
+    color: #b91c1c;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 0.86rem;
+    cursor: pointer;
+    transition: transform var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.settings-btn:hover {
+    transform: translateY(-1px);
+}
+
+.settings-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.settings-btn.secondary {
+    background: var(--surface-muted);
+    color: var(--text-soft);
+}
+
+.settings-btn.primary {
+    background: var(--bubble-user);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: var(--bubble-user-shadow);
+}
+
+@media (max-width: 560px) {
+    .settings-modal {
+        padding: 18px;
+    }
+
+    .settings-actions {
+        flex-direction: column-reverse;
+    }
+
+    .settings-btn {
+        justify-content: center;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   16. 无障碍：减少动效
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
     *,

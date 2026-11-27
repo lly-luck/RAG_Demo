@@ -5,11 +5,44 @@
 系统采用 **「FAQ 精确匹配 + RAG 检索生成」双通道架构**：先走 BM25 快速命中企业 FAQ，命中不了再进入 RAG 链路（问题分类 → 检索策略路由 → 混合检索 → 重排序 → 大模型生成），并通过 WebSocket 把答案**流式**推送到前端页面。
 
 > ⚠️ **本项目是教学 / 演示性质的 Demo，不能直接用于生产环境。**
-> 实际使用前 **必须修改 `config.ini`** 中的 MySQL、Redis、Milvus、LLM 等配置（详见下方 [配置说明](#重要提示实际使用前必须修改-configini)）。
+> 默认 `embedded` 模式只需在页面「设置」中填写 LLM 的 Base URL / 模型名 / API Key；
+> 切到 `external` 模式时才需要修改 `config.ini` 中的 MySQL、Redis、Milvus 配置（详见下方 [配置说明](#重要提示实际使用前必须修改-configini)）。
 
 > 🧠 **重要：仓库内不使用本地模型权重，且本地 `model/` 里的副本可能已经落后。**
-> `model/` 目录约 **6.7 GB**，因为 GitHub 单文件 100 MB 的限制无法入库（详见 [模型说明](#模型说明模型版本可能落后请自行下载最新版)）。
+> `model/` 目录约 **7.9 GB**（含便携包使用的 `bge-reranker-base`），因为 GitHub 单文件 100 MB 的限制无法入库（详见 [模型说明](#模型说明模型版本可能落后请自行下载最新版)）。
 > 仓库里的 `bge-m3`、`bge-reranker-large`、`bert_query_classifier` **很可能不是最新版本**，建议直接到官网 / 模型页下载当前最新版，而不要沿用旧副本。
+
+## 便携版（内嵌存储，推荐演示）
+
+默认配置 `[storage] backend = embedded`，**不需要 MySQL / Redis / Milvus**：
+
+- SQLite 替代 MySQL（FAQ + 会话历史）
+- 进程内 TTL 缓存替代 Redis
+- Chroma 本地持久化替代 Milvus（BGE-M3 dense + BM25 融合 + Reranker）
+
+本地开发运行：
+
+```bash
+pip install -r requirements.txt
+# 准备 model/bge-m3、model/bge-reranker-base、model/bert_query_classifier
+python packaging/export_faq.py          # 从本机 MySQL 导出 FAQ 种子（仅首次）
+python packaging/build_kb.py --force    # 用 rag_qa/data 下的 PDF 构建 Chroma 种子
+python app.py                           # 打开 http://127.0.0.1:8080
+```
+
+首次打开页面右上角「设置」填写 LLM 的 Base URL / 模型名 / API Key，测试连接后保存。
+需要回到原来的 MySQL + Redis + Milvus 模式时，把 `config.ini` 改为 `backend = external`。
+
+构建 Windows 便携包：
+
+```powershell
+# 在 edu_rag 环境（Python 3.12 + CPU torch）中执行
+$env:EDU_RAG_PYTHON = "D:\...\envs\edu_rag\python.exe"
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+# 产物：dist\RAGDemo-portable\ 与 dist\RAGDemo-portable-<version>.7z
+```
+
+详见 `packaging/README-portable.txt`。
 
 ---
 
@@ -33,10 +66,10 @@
 
 | 功能 | 说明 |
 | --- | --- |
-| FAQ 双通道问答 | 先查 Redis 精确缓存 → 再走 BM25 相似度匹配 → 都不命中才调用大模型，显著降低响应时延与 Token 成本 |
+| FAQ 双通道问答 | 先查 Redis/进程内缓存精确命中 → 再走 BM25 相似度匹配 → 都不命中才调用大模型，显著降低响应时延与 Token 成本 |
 | 问题分类路由 | 微调 BERT 对问题做二分类（`通用知识` / `专业咨询`），通用问题直接回答，专业问题才进知识库检索 |
 | 动态检索策略 | 由 LLM 在「直接检索 / 子查询检索 / HyDE 假设答案检索」三种策略中自动择优 |
-| 混合检索 | BGE-M3 同时产出稠密 + 稀疏向量，Milvus 双路召回后用 `WeightedRanker` 加权融合 |
+| 混合检索 | 默认 Chroma dense（BGE-M3）+ BM25 加权融合；external 模式为 Milvus dense+sparse 双路召回 + `WeightedRanker` |
 | 重排序 | BGE-Reranker-Large 交叉编码器对父块重新打分，取 Top-N 作为上下文 |
 | 父子分块 | 子块（300 字）负责精准召回，父块（1200 字）负责提供完整上下文，避免语义被切碎 |
 | 多格式解析 | PDF / Word / PPT / 图片 / Markdown / TXT，扫描件与图片走 OCR |
@@ -60,15 +93,15 @@
 | --- | --- |
 | Web 框架 | FastAPI、Uvicorn、Starlette（WebSocket / StaticFiles / CORS） |
 | 前端 | 原生 HTML + CSS + JavaScript、marked.js（Markdown 渲染）、Font Awesome |
-| LLM 编排 | LangChain（`langchain` 1.x、`langchain-core`）、`init_chat_model`、`PromptTemplate` |
-| 大模型 | DeepSeek（OpenAI 兼容接口，默认 `deepseek-flash`），可替换为其他兼容模型 |
+| LLM 编排 | LangChain（`langchain` 1.x、`langchain-core`）、`ChatOpenAI`、`PromptTemplate` |
+| 大模型 | 任意 OpenAI 兼容接口，默认 DeepSeek `deepseek-chat`；首次启动在页面设置中填写 |
 | 文本向量 | BGE-M3（`milvus-model` 的 `BGEM3EmbeddingFunction`，中文/多语言，稠密 + 稀疏） |
-| 向量数据库 | Milvus 2.5（`pymilvus`），`IVF_FLAT`（IP）稠密索引 + `SPARSE_INVERTED_INDEX` 稀疏索引，`hybrid_search` 混合检索 |
-| 重排序模型 | BGE-Reranker-Large（`sentence-transformers` 的 `CrossEncoder`） |
+| 向量数据库 | 默认 Chroma 本地持久化（BGE-M3 dense + BM25 融合）；external 模式为 Milvus 2.5 双路混合检索 |
+| 重排序模型 | 默认 BGE-Reranker-Base（`sentence-transformers` 的 `CrossEncoder`）；可换 large |
 | 问题分类模型 | 微调后的 BERT（`transformers` + PyTorch，`BertForSequenceClassification`） |
 | FAQ 检索 | `rank_bm25`（BM25Okapi）+ `jieba` 分词 + softmax 归一化阈值判定 |
-| 关系型数据库 | MySQL 8（`PyMySQL`）：FAQ 知识库表 + 会话历史表 |
-| 缓存 | Redis（`redis-py`）：FAQ 问题列表、分词结果、答案缓存 |
+| 关系型数据库 | 默认 SQLite（内嵌）；external 模式为 MySQL 8（`PyMySQL`） |
+| 缓存 | 默认进程内 TTL 缓存；external 模式为 Redis（`redis-py`） |
 | 文档解析 | PyMuPDF（PDF）、RapidOCR（`rapidocr-onnxruntime` / `rapidocr-paddle` 图片 OCR）、python-docx、python-pptx、OpenCV、unstructured |
 | 日志 | 标准库 `logging`，文件 + 控制台双输出 |
 
@@ -84,7 +117,7 @@ flowchart TD
     G -->|命中| R1[固定回复 + 逐字符流式]
     G -->|未命中| B[IntegratedQASystem]
 
-    B --> C{1. Redis 精确命中}
+    B --> C{1. Redis/内存缓存精确命中}
     C -->|命中| R2[直接返回答案]
     C -->|未命中| D{2. BM25 相似度 ≥ 阈值}
     D -->|命中| R2
@@ -340,7 +373,7 @@ collection_name = rag_kb       # 集合名（不存在会自动创建）
 
 # ---------- 必须修改：LLM ----------
 [llm]
-model = deepseek-flash                  # 模型名
+model = deepseek-chat                   # 模型名
 llm_api_key = sk-xxxx                   # ← 必须换成你自己的 API Key
 llm_base_url = https://api.deepseek.com # OpenAI 兼容接口地址
 ```
